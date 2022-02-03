@@ -1,5 +1,0 @@
-[core]
-    autostage = true
-    remote = store
-['remote "store"']
-    url = /datasets
