@@ -1,150 +1,188 @@
-# This is a sample Python script.
-
-from bs4 import BeautifulSoup
-import urllib.request, urllib.parse
-from pytube import YouTube
 import cv2
-import os
+from pytube import YouTube
+from parser import args
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 import glob
+import os
 
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+class YouTubeConverter():
+
+    def __init__(self):
+
+        self.height = args.height
+        self.width = args.width
+        self.rate = args.frame_rate
+        self.MOVIE_PATH = args.movie_path
+        self.IMAGE_PATH = args.image_path
+
+    def URLreader(self) -> list:
+        """ Parse through .txt file with urls and store them in a list.
+        """
+        urls = []
+
+        with open('urls.txt') as file:
+
+            # urls = [line.split(',') for line in file]
+            for line in file:
+                line = line.split(',')
+
+                url = []
+
+                for attr in range(len(line)):
+
+                    if attr == 0:
+                        url.append(line[attr])
+
+                    else:
+                        url.append(float(line[attr]))
+
+                urls.append(url)
+
+        return urls
+
+    def DownloadMovie(self, url: str) -> None:
+        """ Download movie clips from YouTube to MOVIE_PATH.
+        :param url: URL to YouTube-clip
+        """
+        movie = YouTube(url)
+        movie = movie.streams.filter(file_extension='mp4').get_highest_resolution()
+        movie.download(self.MOVIE_PATH)
+
+    def Movie2Image(self,
+                    movie: str,
+                    fraction_width: float,
+                    fraction_height: float,
+                    displacement_top: float,
+                    displacement_left: float,
+                    start: int = 0,
+                    end: int = 0,
+                    file_count: int = 0) -> int:
+        """ Converts mp4 file to .jpg files representing movie frames.
+
+        :params movie: Path to the actual movie in mp4 format
+        :params fraction_width: Width of the cropping window, in percent %.
+        :params fraction_height: Heght of the cropping window, in percent %.
+        :params displacement_top: Displacement of the cropping window from the top, in percent %.
+        :params displacement_left: Displacement of the cropping window from the left, in percent %.
+        :params start: Start time, in seconds
+        :params end: End time, in seconds
+        :params file_count: Filecount, to keep track of generated images
+
+        :return file_count: Filecount after frames extraction
+        """
+
+        vidcap = cv2.VideoCapture(movie)
+        count = 0
+        success = True
+
+        FPS = int(vidcap.get(cv2.CAP_PROP_FPS))
+        VIDEO_HEIGHT = vidcap.get(3)
+        VIDEO_WIDTH = vidcap.get(4)
+
+        def GenerateImage(image: np.ndarray, file_count: int) -> int:
+            """ Crops and saves images to 'data/images/'
+
+            :params image: Image represented in a numpy array, using the cv2 package.
+            :params file_count: Current filecount
+
+            :return file_count: Filecount after download
+            """
+
+            if args.bw:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Measure window size
+            box_size_height = int(VIDEO_HEIGHT * fraction_width)
+            box_size_width = int(VIDEO_WIDTH * fraction_height)
+
+            # Measure displacement of window
+            start_y = int(VIDEO_HEIGHT * (displacement_top))
+            end_y = start_y + box_size_height
+
+            start_x = int(VIDEO_WIDTH * (displacement_left))
+            end_x = start_x + box_size_width
+
+            # Crop image
+            image = image[start_x: end_x - 1, start_y:end_y - 1]
+
+            # Re-size image
+            image = cv2.resize(image, (self.height, self.width))
+
+            # Download image
+            cv2.imwrite(self.IMAGE_PATH + 'img%d.jpg' % file_count, image)
+
+            file_count += 1
+
+            return file_count
+
+        while success:
+
+            success, image = vidcap.read()
+
+            if count % (int(FPS * self.rate)) == 0:
+
+                if end > 0:
+
+                    # If current movie frame is within the desired interval
+                    if count >= int(FPS * start) and count <= int(FPS * end):
+
+                        file_count = GenerateImage(image, file_count)
+
+                    # If current movie frame is outside the interval
+                    elif count > int(FPS * end):
+
+                        return file_count
+
+                else:
+                    # Generate images
+                    file_count = GenerateImage(image, file_count)
+
+            count += 1
+
+        return file_count
+
+    def start(self):
+        """ Start the extraction process.
+        """
+
+        print(f'Loading URL-links.')
+
+        urls = self.URLreader()
+
+        filecount = 0
+
+        print(f'Activating extraction process.')
+        for url_list in tqdm(urls):
+            url = url_list[0]  # URL to YouTube-clip
+            fraction_width = url_list[1]  # Width of cropping window, in percent %
+            fraction_height = url_list[2]  # Height of cropping window, in percent %
+            displacement_top = url_list[3]  # Displacement from top, in percent %
+            displacement_left = url_list[4]  # Displacement from left, in percent %
+
+            start = int(url_list[5])  # Start time
+            end = int(url_list[6])  # End time
+
+            assert fraction_width + displacement_left <= 1, 'Width and displacement should account for maximum of 100%.'
+            assert fraction_height + displacement_top <= 1, 'Height and displacement should account for maximum of 100%.'
+
+            movie = self.DownloadMovie(url)
+
+            print(f'Converting YouTube-clips to .jpg frames to {args.image_path}')
+
+            file = glob.glob(f"{self.MOVIE_PATH}*.mp4")[0]
+            filecount = self.Movie2Image(file, fraction_width, fraction_height, displacement_top, displacement_left,
+                                         start, end, filecount)
+            os.remove(file)
+
+        print(f'Extracted {filecount} images')
 
 
-def get_urls_old(text, limit=10):
-    query = urllib.parse.quote(text)
-    url = "https://www.youtube.com/results?search_query=" + query
-    url = "https://www.youtube.com/results?search_query=runway+landing+cockpit+view&sp=EgIgAQ%253D%253D"
-    response = urllib.request.urlopen(url)
-    html = response.read()
-    soup = BeautifulSoup(html, 'html.parser')
-    #yt-simple-endpoint
-    # video-title.ytd-video-renderer
-    #href
-    urls = []
-    for i, vid in enumerate(soup.findAll(attrs={'class':'yt-uix-tile-link'})):
-        if i < limit:
-            urls.append('https://www.youtube.com' + vid['href'])
-    print(f"Found {len(urls)} video links for {text}")
-    return urls
-
-
-def get_urls(text, limit=10):
-    '''Search for a phrase on Youtube and returns a list of links to the first videos
-        that are returned. A maximum of results can be set (default 10).'''
-
-    query = urllib.parse.quote(text)
-    url = "https://www.youtube.com/results?search_query=" + query
-    response = urllib.request.urlopen(url)
-    html = response.read()
-    soup = BeautifulSoup(html, 'html.parser')
-    urls = []
-    for i, vid in enumerate(soup.findAll(attrs={'class': 'yt-uix-tile-link'})):
-        if i < limit:
-            urls.append('https://www.youtube.com' + vid['href'])
-    print(f"Found {len(urls)} video links for {text}")
-    return urls
-
-
-def download_video(url, path=None, max_duration=10):
-    '''Download Youtube video from the url to the path specified, or the cwd if non specified.
-        Only videos shorter than max_duration are downloaded and reports are printed to say which
-         video is downloaded successfully.'''
-
-    try:
-        yt = YouTube(url)
-        duration = yt.length
-        if duration < max_duration * 60 * 1000:
-            yt = yt.streams.filter(file_extension='mp4').first()
-            out_file = yt.download(path)
-            file_name = out_file.split("\\")[-1]
-            print(f"Downloaded {file_name} correctly!")
-        else:
-            print(f"Video {url} too long")
-    except Exception as exc:
-        print(f"Download of {url} did not work because of {exc}...")
-
-
-def max_label(name, folder):
-    '''Look at a folder and check the files with pattern "name_###.jpg" to extract the
-    largest label present.'''
-
-    path_pattern = os.path.join(folder, name + "_*.jpg")
-    existing_files = glob.glob(path_pattern)
-    if not existing_files:
-        biggest_label = 0
-    else:
-        existing_labels = map(lambda s: int(s.split('_')[-1].split('.')[0]), existing_files)
-        biggest_label = max(existing_labels)
-    return biggest_label
-
-
-def extract_images_from_video(video, folder=None, delay=30, name="file", max_images=20, silent=False, start_frame=1):
-    '''Read a downloaded video from its path and extract screenshots every few seconds, set by the delay parameter.
-        Images are saved in the specified folder or the cwd if none is specified and a maximum number of
-        screenshots can be specified. The files are named "name_##.jpg" and the labelling starts where it already stops
-        in the folder.'''
-
-    vidcap = cv2.VideoCapture(video)
-    count = 0
-    num_images = 0
-    print(f'starting at frame {start_frame}')
-    if not folder:
-        folder = os.getcwd()
-    label = 0#max_label(name, folder)
-    success = True
-    fps = int(vidcap.get(cv2.CAP_PROP_FPS))
-    vidcap.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
-    print(f'positioned at frame {vidcap.get(cv2.CAP_PROP_POS_FRAMES)}')
-
-    while success and num_images < max_images:
-        success, image = vidcap.read()
-        num_images += 1
-        label += 1
-        file_name = name + "_" + str(label) + ".jpg"
-        path = os.path.join(folder, file_name)
-        try:
-            cv2.imwrite(path, image)
-            if cv2.imread(path) is None:
-                os.remove(path)
-            else:
-                if not silent:
-                    print(f'Image successfully written at {path}')
-        except:
-            pass
-        count += delay * fps + start_frame
-        vidcap.set(1, count)
-
-
-def extract_images_from_word(text, delete_video=False, image_delay=30,
-                             num_urls=10, max_images=20, name="file", max_duration=15, silent=False, urls=None, starts=None):
-    '''Search for a phrase on Youtube, download a specified number of videos from the results and extract
-        screenshots from them with a specified time delay between each. A folder is created in the cwd
-         to store the images, which are named "name_###.jpg". If the folder already exists, the labelling
-         starts where it stopped before. Videos are deleted after the extraction.'''
-
-    if not os.path.exists(name):
-        os.mkdir(name)
-    if not urls:
-        urls = get_urls(text, num_urls)
-    for url in urls:
-        download_video(url, max_duration=max_duration)
-    for i, video in enumerate(glob.glob("*.mp4")):
-        extract_images_from_video(video, folder=name, delay=image_delay, name=name, max_images=max_images,
-                                  silent=silent, start_frame=starts[i])
-        if delete_video:
-            os.remove(video)
-
-
-def main():
-    print('hej')
-    urls = ['https://youtu.be/HyBjs5jg1Ug?t=210']
-    fps = 30
-    starts = fps * [(3*60+30)]
-    extract_images_from_word(text='hej', delete_video=False, image_delay=1,
-                             num_urls=10, max_images=100, name="a320_abu_dhabi", max_duration=15, silent=False, urls=urls, starts=starts)
 if __name__ == '__main__':
-    #get_urls(text='runway')
-    main()
+    convert_engine = YouTubeConverter()
+    convert_engine.start()
+
+
 
