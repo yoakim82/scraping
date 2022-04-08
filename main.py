@@ -2,7 +2,6 @@ import cv2
 from pytube import YouTube
 from parser import args
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 import glob
 import os
@@ -79,8 +78,8 @@ class YouTubeConverter():
         success = True
 
         FPS = int(vidcap.get(cv2.CAP_PROP_FPS))
-        VIDEO_HEIGHT = vidcap.get(3)
-        VIDEO_WIDTH = vidcap.get(4)
+        VIDEO_HEIGHT = vidcap.get(4)
+        VIDEO_WIDTH = vidcap.get(3)
 
         def GenerateImage(image: np.ndarray, file_count: int) -> int:
             """ Crops and saves images to 'data/images/'
@@ -95,8 +94,8 @@ class YouTubeConverter():
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
             # Measure window size
-            box_size_height = int(VIDEO_HEIGHT * fraction_width)
-            box_size_width = int(VIDEO_WIDTH * fraction_height)
+            box_size_height = int(VIDEO_HEIGHT * fraction_height)
+            box_size_width = int(VIDEO_WIDTH * fraction_width)
 
             # Measure displacement of window
             start_y = int(VIDEO_HEIGHT * (displacement_top))
@@ -106,7 +105,12 @@ class YouTubeConverter():
             end_x = start_x + box_size_width
 
             # Crop image
-            image = image[start_x: end_x - 1, start_y:end_y - 1]
+            if args.box:
+                CLR = (0,0,255)
+                cv2.rectangle(image, (start_x-1, start_y-1), (end_x+1, end_y+1), CLR, 1)
+                cv2.imshow("Crop box", image)
+                cv2.waitKey(0)
+            image = image[start_y: end_y - 1, start_x:end_x - 1]
 
             # Re-size image
             image = cv2.resize(image, (self.height, self.width))
@@ -159,8 +163,8 @@ class YouTubeConverter():
             url = url_list[0]  # URL to YouTube-clip
             fraction_width = url_list[1]  # Width of cropping window, in percent %
             fraction_height = url_list[2]  # Height of cropping window, in percent %
-            displacement_top = url_list[3]  # Displacement from top, in percent %
-            displacement_left = url_list[4]  # Displacement from left, in percent %
+            displacement_left = url_list[3]  # Displacement from top, in percent %
+            displacement_top = url_list[4]  # Displacement from left, in percent %
 
             start = int(url_list[5])  # Start time
             end = int(url_list[6])  # End time
@@ -170,12 +174,13 @@ class YouTubeConverter():
 
             movie = self.DownloadMovie(url)
 
-            print(f'Converting YouTube-clips to .jpg frames to {args.image_path}')
+        print(f'Converting YouTube-clips to .jpg frames to {args.image_path}')
 
-            file = glob.glob(f"{self.MOVIE_PATH}*.mp4")[0]
+        for file in tqdm(glob.glob(f"{self.MOVIE_PATH}*.mp4")):
+            print(f'Converting {file} to .jpg frames to {args.image_path}, starting at index {filecount}')
             filecount = self.Movie2Image(file, fraction_width, fraction_height, displacement_top, displacement_left,
                                          start, end, filecount)
-            os.remove(file)
+            #os.remove(file)
 
         print(f'Extracted {filecount} images')
 

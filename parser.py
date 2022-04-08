@@ -1,7 +1,7 @@
 __author__ = 'Majd Jamal'
 
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import argparse
 
 parser = argparse.ArgumentParser(description='Image Classification of fruits and vegetables')
@@ -17,6 +17,9 @@ parser.add_argument('--bw', action = 'store_true', default=False,
 
 parser.add_argument('--crop', action = 'store_true', default=False,
 	help='Cropping images')
+
+parser.add_argument('--box', action = 'store_true', default=False,
+	help='Display Cropout box')
 
 parser.add_argument('--convert_only', action = 'store_true', default=False,
 	help='Does not download mp4 files, but convert frames to .jpg.')
